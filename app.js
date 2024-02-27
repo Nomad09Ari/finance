@@ -16,9 +16,59 @@ var uiController = (function () {
     expenseLabel: ".budget__expenses--value",
     percentagelabel: ".budget__expenses--percentage",
     containerDiv: ".container",
+    expensePercentageLabel: ".item__percentage",
+    dateLabel: ".budget__title--month",
   };
+
+  var nodeListForEach = function (list, callback) {
+    for (var i = 0; i < list.length; i++) {
+      callback(list[i], i);
+    }
+  };
+
+  var formatMoney = function (too, type) {
+    // toog temdegt mur bolgoj hurvuuleh
+    too = "" + too;
+
+    var x = too.split("").reverse().join("");
+    // console.log("2 too = " + x);
+    // Output===> '987654321'
+
+    var y = "";
+    var count = 1;
+
+    for (var i = 0; i < x.length; i++) {
+      y = y + x[i];
+
+      if (count % 3 === 0) y = y + ",";
+      count++;
+    }
+
+    // console.log("3 too = " + y);
+    // Output===> 987,654,321
+
+    var z = y.split("").reverse().join("");
+    // console.log("4 too = " + z);
+    // Output===> ,123,456,789
+
+    if (z[0] === ",") z = z.substring(1, z.length - 1);
+    // console.log("5 too = " + z);
+    // Output===> 123,456,789
+
+    if (type === "inc") z = "+ " + z;
+    else z = "- " + z;
+
+    return z;
+  };
+
   // Public service
   return {
+    displayDate: function () {
+      var unuudur = new Date();
+      document.querySelector(DOMstrings.dateLabel).textContent =
+        unuudur.getFullYear() + " оны " + unuudur.getMonth() + " сарын ";
+    },
+
     getInput: function () {
       return {
         type: document.querySelector(DOMstrings.inputType).value,
@@ -26,6 +76,17 @@ var uiController = (function () {
         // parseInt ni string-iig too-ruu hurwuulne
         value: parseInt(document.querySelector(DOMstrings.inputValue).value),
       };
+    },
+
+    displayPercentages: function (allPercentages) {
+      // Zarlagiin NodeList-iig oloh ===> DOM-iin neg elementiig node gj nerlene
+      var elements = document.querySelectorAll(
+        DOMstrings.expensePercentageLabel
+      );
+      // element bolgonii huvid zarlagiin huviig massivaas avch shivj oruulah
+      nodeListForEach(elements, function (el, index) {
+        el.textContent = allPercentages[index];
+      });
     },
 
     getDOMstrings: function () {
@@ -54,7 +115,13 @@ var uiController = (function () {
     },
 
     tusviigUzuuleh: function (tusuv) {
-      document.querySelector(DOMstrings.tusuvLabel).textContent = tusuv.tusuv;
+      var type;
+      if (tusuv.tusuv > 0) type = "inc";
+      else type = "exp";
+      document.querySelector(DOMstrings.tusuvLabel).textContent = formatMoney(
+        tusuv.tusuv,
+        type
+      );
       document.querySelector(DOMstrings.incomeLabel).textContent =
         tusuv.totalInc;
       document.querySelector(DOMstrings.expenseLabel).textContent =
@@ -91,7 +158,7 @@ var uiController = (function () {
       // Ter html dotroo orlogo zarlagiin utguudiig REPLACE ashiglan uurcilj ugnu.
       html = html.replace("%id%", item.id);
       html = html.replace("$$DESCRIPTION$$", item.description);
-      html = html.replace("&&VALUE&&", item.value);
+      html = html.replace("&&VALUE&&", formatMoney(item.value, type));
 
       // Beltgesen html-ee DOM ruu hiij ugnu.
       document.querySelector(list).insertAdjacentHTML("beforeend", html);
@@ -111,6 +178,18 @@ var financeController = (function () {
     this.id = id;
     this.description = description;
     this.value = value;
+    this.percentage = -1;
+  };
+
+  // Object dotorh prototype dotor ni calcPercentage bolon getPercentage gsen function bii
+  Expense.prototype.calcPercentage = function (totalIncome) {
+    if (totalIncome > 0)
+      this.percentage = Math.round((this.value / totalIncome) * 100);
+    else this.percentage = 0;
+  };
+
+  Expense.prototype.getPercentage = function () {
+    return this.percentage;
   };
 
   var calculateTotal = function (type) {
@@ -149,7 +228,23 @@ var financeController = (function () {
       data.tusuv = data.totals.inc - data.totals.exp;
 
       // orlogo zarlagiin huviig tootsoolno
-      data.percent = Math.round((data.totals.exp / data.totals.inc) * 100);
+      if (data.totals.inc > 0)
+        data.percent = Math.round((data.totals.exp / data.totals.inc) * 100);
+      else data.percent = 0;
+    },
+
+    calculatePercentages: function () {
+      data.items.exp.forEach(function (el) {
+        el.calcPercentage(data.totals.inc);
+      });
+    },
+
+    getPercentages: function () {
+      var allPercentages = data.items.exp.map(function (el) {
+        return el.getPercentage();
+      });
+
+      return allPercentages;
     },
 
     tusuvAvah: function () {
@@ -215,16 +310,29 @@ var appController = (function (uiController, financeController) {
       // 3. Olj avsan ugugdluudee web deeree tohiroh hesegt gargaj uzuulne
       uiController.addListItem(item, input.type);
       uiController.clearFields();
-
-      // 4. Tusviig tootsoolno
-      financeController.tusuvTootsooloh();
-
-      // 5. Etssiin uldegdel
-      var tusuv = financeController.tusuvAvah();
-
-      // 6. Tusviin tootsoog delgetsend gargana.
-      uiController.tusviigUzuuleh(tusuv);
+      //  Tusviig shineer tootsoolood delgestend uzuulne.
+      updateTusuv();
     }
+  };
+
+  var updateTusuv = function () {
+    // 4. Tusviig tootsoolno
+    financeController.tusuvTootsooloh();
+
+    // 5. Etssiin uldegdel
+    var tusuv = financeController.tusuvAvah();
+
+    // 6. Tusviin tootsoog delgetsend gargana.
+    uiController.tusviigUzuuleh(tusuv);
+
+    // 7. Elementuudiin huviig tootsoolno
+    financeController.calculatePercentages();
+
+    // 8. Elementuudiin huviig huleej avna
+    var allPercentages = financeController.getPercentages();
+
+    // 9. Edgeer huviig delgetsend gargana
+    uiController.displayPercentages(allPercentages);
   };
 
   setupEventListener = function () {
@@ -259,6 +367,8 @@ var appController = (function (uiController, financeController) {
           uiController.deleteListItem(id);
 
           // 3. Uldegdel tootsoog shinechlj haruulna
+          //  Tsusviig shineer tootsoolood delgestend uzuulne.
+          updateTusuv();
         }
       });
   };
@@ -266,6 +376,7 @@ var appController = (function (uiController, financeController) {
   return {
     init: function () {
       console.log("App started...");
+      uiController.displayDate();
       uiController.tusviigUzuuleh({
         tusuv: 0,
         percent: 0,
